@@ -1,26 +1,63 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { InjectRepository } from '@mikro-orm/nestjs';
+import { EntityRepository } from '@mikro-orm/core';
+import { User } from '@entities/User';
+import { EntityManager } from '@mikro-orm/postgresql';
+import { PaginationDto } from '@dtos/pagination.dto';
+import { wrap } from '@mikro-orm/core';
 
 @Injectable()
 export class UserService {
-  create(createUserDto: CreateUserDto) {
-    return 'This action adds a new user';
+  constructor(
+    @InjectRepository(User)
+    private readonly userRepository: EntityRepository<User>,
+    private em: EntityManager,
+  ) {}
+
+  async create(createUserDto: CreateUserDto) {
+    const user = await this.userRepository.findOne({
+      email: createUserDto.email,
+    });
+    if (user) {
+      throw new NotFoundException('user already exists');
+    }
+
+    const newUser = this.userRepository.create(createUserDto);
+    await this.em.persistAndFlush(newUser);
+
+    return newUser;
   }
 
-  findAll() {
-    return `This action returns all user`;
+  async findAll(data: PaginationDto) {
+    return this.userRepository.findAndCount(
+      {},
+      {
+        limit: data.limit,
+        offset: (data.page - 1) * data.limit,
+      },
+    );
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} user`;
+  async findOne(id: number) {
+    const user = await this.userRepository.findOne(id);
+    if (!user) {
+      throw new NotFoundException('user already exists');
+    }
+    return user;
   }
 
-  update(id: number, updateUserDto: UpdateUserDto) {
-    return `This action updates a #${id} user`;
+  async update(id: number, updateUserDto: UpdateUserDto) {
+    const user = await this.findOne(id);
+    wrap(user).assign(updateUserDto);
+    await this.em.persistAndFlush(user);
+    return 'update user successfully';
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} user`;
+  async remove(id: number) {
+    const user = await this.findOne(id);
+    await this.em.removeAndFlush(user);
+    return 'delete user successfully';
   }
 }
